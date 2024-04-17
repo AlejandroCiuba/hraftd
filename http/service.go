@@ -4,7 +4,6 @@ package httpd
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -36,6 +35,12 @@ type Service struct {
 	ln   net.Listener
 
 	store Store
+}
+
+type Results struct {
+	RSS float64 "json:RSS"
+	CPU float64 "json:CPU"
+	LOG float64 "json:LOG"
 }
 
 // New returns an uninitialized HTTP service.
@@ -73,7 +78,6 @@ func (s *Service) Start() error {
 // Close closes the service.
 func (s *Service) Close() {
 	s.ln.Close()
-	return
 }
 
 // ServeHTTP allows Service to serve HTTP requests.
@@ -98,8 +102,18 @@ func (s *Service) handleStats(w http.ResponseWriter) {
 		return
 	}
 
-	results := fmt.Sprintf("RESULT | CPU UTIL %.3f%%\nRESULTS | MAX MEM UTIL: %.3f MiB\nRESULTS | END LOG SIZE: %.3f", (*data)["CPU"], (*data)["RSS"], (*data)["LOG"])
-	io.WriteString(w, results)
+	results := Results{
+		RSS: (*data)["RSS"],
+		CPU: (*data)["CPU"],
+		LOG: (*data)["LOG"],
+	}
+
+	pck, err := json.Marshal(results)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+	}
+
+	w.Write(pck)
 }
 
 func (s *Service) handleJoin(w http.ResponseWriter, r *http.Request) {
