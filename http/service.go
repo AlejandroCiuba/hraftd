@@ -4,6 +4,7 @@ package httpd
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -24,6 +25,9 @@ type Store interface {
 
 	// Join joins the node, identitifed by nodeID and reachable at addr, to the cluster.
 	Join(nodeID string, addr string) error
+
+	// Get the stats from this node
+	Stats() (*map[string]float64, error)
 }
 
 // Service provides HTTP service.
@@ -78,9 +82,24 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleKeyRequest(w, r)
 	} else if r.URL.Path == "/join" {
 		s.handleJoin(w, r)
+	} else if r.URL.Path == "/stats" {
+		s.handleStats(w)
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 	}
+}
+
+func (s *Service) handleStats(w http.ResponseWriter) {
+
+	data, err := s.store.Stats()
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	results := fmt.Sprintf("RESULT | CPU UTIL %.3f%%\nRESULTS | MAX MEM UTIL: %.3f MiB\nRESULTS | END LOG SIZE: %.3f", (*data)["CPU"], (*data)["RSS"], (*data)["LOG"])
+	io.WriteString(w, results)
 }
 
 func (s *Service) handleJoin(w http.ResponseWriter, r *http.Request) {

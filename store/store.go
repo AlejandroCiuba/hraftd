@@ -12,9 +12,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,10 +46,13 @@ type Store struct {
 	mu sync.Mutex
 	m  map[string]string // The key-value store for the system.
 
-	raft *raft.Raft // The consensus mechanism
+	Raft *raft.Raft // The consensus mechanism
 
 	logger *log.Logger
 }
+
+// To access the log, we gotta get dirty
+var dirtyLog raft.Log = raft.Log{}
 
 // New returns a new Store.
 func New(inmem bool) *Store {
@@ -75,9 +82,15 @@ func (s *Store) Open(enableSingle bool, localID string) error {
 	}
 
 	// Create the snapshot store. This allows the Raft to truncate the log.
-	snapshots, err := raft.NewFileSnapshotStore(s.RaftDir, retainSnapshotCount, os.Stderr)
-	if err != nil {
-		return fmt.Errorf("file snapshot store: %s", err)
+	var snapshots raft.SnapshotStore
+
+	if s.inmem {
+		snapshots = raft.NewInmemSnapshotStore()
+	} else {
+		snapshots, err = raft.NewFileSnapshotStore(s.RaftDir, retainSnapshotCount, os.Stderr)
+		if err != nil {
+			return fmt.Errorf("file snapshot store: %s", err)
+		}
 	}
 
 	// Create the log store and stable store.
@@ -102,7 +115,7 @@ func (s *Store) Open(enableSingle bool, localID string) error {
 	if err != nil {
 		return fmt.Errorf("new raft: %s", err)
 	}
-	s.raft = ra
+	s.Raft = ra
 
 	if enableSingle {
 		configuration := raft.Configuration{
@@ -128,7 +141,7 @@ func (s *Store) Get(key string) (string, error) {
 
 // Set sets the value for the given key.
 func (s *Store) Set(key, value string) error {
-	if s.raft.State() != raft.Leader {
+	if s.Raft.State() != raft.Leader {
 		return fmt.Errorf("not leader")
 	}
 
@@ -142,13 +155,13 @@ func (s *Store) Set(key, value string) error {
 		return err
 	}
 
-	f := s.raft.Apply(b, raftTimeout)
+	f := s.Raft.Apply(b, raftTimeout)
 	return f.Error()
 }
 
 // Delete deletes the given key.
 func (s *Store) Delete(key string) error {
-	if s.raft.State() != raft.Leader {
+	if s.Raft.State() != raft.Leader {
 		return fmt.Errorf("not leader")
 	}
 
@@ -161,7 +174,7 @@ func (s *Store) Delete(key string) error {
 		return err
 	}
 
-	f := s.raft.Apply(b, raftTimeout)
+	f := s.Raft.Apply(b, raftTimeout)
 	return f.Error()
 }
 
@@ -170,7 +183,7 @@ func (s *Store) Delete(key string) error {
 func (s *Store) Join(nodeID, addr string) error {
 	s.logger.Printf("received join request for remote node %s at %s", nodeID, addr)
 
-	configFuture := s.raft.GetConfiguration()
+	configFuture := s.Raft.GetConfiguration()
 	if err := configFuture.Error(); err != nil {
 		s.logger.Printf("failed to get raft configuration: %v", err)
 		return err
@@ -187,19 +200,39 @@ func (s *Store) Join(nodeID, addr string) error {
 				return nil
 			}
 
-			future := s.raft.RemoveServer(srv.ID, 0, 0)
+			future := s.Raft.RemoveServer(srv.ID, 0, 0)
 			if err := future.Error(); err != nil {
 				return fmt.Errorf("error removing existing node %s at %s: %s", nodeID, addr, err)
 			}
 		}
 	}
 
-	f := s.raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(addr), 0, 0)
+	f := s.Raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(addr), 0, 0)
 	if f.Error() != nil {
 		return f.Error()
 	}
 	s.logger.Printf("node %s at %s joined successfully", nodeID, addr)
 	return nil
+
+}
+
+func (s *Store) Stats() (*map[string]float64, error) {
+
+	// Get process statss
+	pid := os.Getpid()
+
+	comm := exec.Command("ps", "eo", "pid,rss,pcpu", strconv.Itoa(pid))
+	out, _ := comm.CombinedOutput()
+
+	clean := strings.Split(strings.Split(string(out[:]), "\n")[1], " ")
+
+	rss, _ := strconv.ParseFloat(clean[1], 64)
+	cpu, _ := strconv.ParseFloat(clean[2], 64)
+
+	// Get log stats; we want allocated space, not just the length
+	var size int = 73 + cap(dirtyLog.Data) + cap(dirtyLog.Extensions)
+
+	return &map[string]float64{"RSS": float64(rss) / math.Pow(2, 20), "CPU": float64(cpu), "LOG": float64(size)}, nil
 }
 
 type fsm Store
@@ -213,8 +246,10 @@ func (f *fsm) Apply(l *raft.Log) interface{} {
 
 	switch c.Op {
 	case "set":
+		dirtyLog = *l // This is so stupid
 		return f.applySet(c.Key, c.Value)
 	case "delete":
+		dirtyLog = *l
 		return f.applyDelete(c.Key)
 	default:
 		panic(fmt.Sprintf("unrecognized command op: %s", c.Op))
