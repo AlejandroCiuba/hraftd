@@ -54,6 +54,21 @@ type Store struct {
 // To access the log, we gotta get dirty
 var dirtyLog raft.Log = raft.Log{}
 
+// Used to time the time it takes to add results
+var total_time float64 = 0
+var inputs float64 = 0
+
+// TODO: CITE
+func timer() func() {
+
+	inputs += 1
+	start := time.Now()
+
+	return func() {
+		total_time += time.Since(start).Seconds()
+	}
+}
+
 // New returns a new Store.
 func New(inmem bool) *Store {
 	return &Store{
@@ -155,6 +170,8 @@ func (s *Store) Set(key, value string) error {
 		return err
 	}
 
+	// Timing data
+	defer timer()()
 	f := s.Raft.Apply(b, raftTimeout)
 	return f.Error()
 }
@@ -232,7 +249,11 @@ func (s *Store) Stats() (*map[string]float64, error) {
 	// Get log stats; we want allocated space, not just the length
 	var size int = 73 + cap(dirtyLog.Data) + cap(dirtyLog.Extensions)
 
-	return &map[string]float64{"RSS": float64(rss) / math.Pow(2, 20), "CPU": float64(cpu), "LOG": float64(size)}, nil
+	// Get the avg commit time
+	avg := total_time / inputs
+
+	return &map[string]float64{"AVG": avg, "RSS": float64(rss) / math.Pow(2, 20),
+		"CPU": float64(cpu), "LOG": float64(size)}, nil
 }
 
 type fsm Store

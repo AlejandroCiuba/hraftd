@@ -38,9 +38,10 @@ type Service struct {
 }
 
 type Results struct {
-	RSS float64 "json:RSS"
-	CPU float64 "json:CPU"
-	LOG float64 "json:LOG"
+	AVG float64 `json:"avg"`
+	RSS float64 `json:"rss"`
+	CPU float64 `json:"cpu"`
+	LOG float64 `json:"log"`
 }
 
 // New returns an uninitialized HTTP service.
@@ -103,6 +104,7 @@ func (s *Service) handleStats(w http.ResponseWriter) {
 	}
 
 	results := Results{
+		AVG: (*data)["AVG"],
 		RSS: (*data)["RSS"],
 		CPU: (*data)["CPU"],
 		LOG: (*data)["LOG"],
