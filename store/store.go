@@ -57,7 +57,7 @@ var dirtyLog raft.Log = raft.Log{}
 var total_time float64 = 0
 var inputs float64 = 0
 
-// TODO: CITE
+// https://stackoverflow.com/questions/45766572/is-there-an-efficient-way-to-calculate-execution-time-in-golang
 func timer() func() {
 
 	inputs += 1
