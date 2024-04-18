@@ -14,15 +14,15 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
+	linuxproc "github.com/c9s/goprocinfo/linux"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
+	"github.com/struCoder/pidusage"
 )
 
 const (
@@ -232,18 +232,25 @@ func (s *Store) Join(nodeID, addr string) error {
 
 }
 
+// I hate this
 func (s *Store) Stats() (*map[string]float64, error) {
 
 	// Get process statss
 	pid := os.Getpid()
 
-	comm := exec.Command("ps", "eo", "pid,rss,pcpu", strconv.Itoa(pid))
-	out, _ := comm.CombinedOutput()
+	stat, err := linuxproc.ReadProcessStat("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return &map[string]float64{}, fmt.Errorf("linuxproc failed to collect stats")
+	}
 
-	clean := strings.Split(strings.Split(string(out[:]), "\n")[1], " ")
+	rss := stat.Rss
 
-	rss, _ := strconv.ParseFloat(clean[1], 64)
-	cpu, _ := strconv.ParseFloat(clean[2], 64)
+	cstat, err := pidusage.GetStat(pid)
+	if err != nil {
+		return &map[string]float64{}, fmt.Errorf("pidusage failed to collect stats")
+	}
+
+	cpu := cstat.CPU
 
 	// Get log stats; we want allocated space, not just the length
 	var size int = 73 + cap(dirtyLog.Data) + cap(dirtyLog.Extensions)
