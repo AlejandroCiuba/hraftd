@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -252,7 +251,7 @@ func (s *Store) Stats() (*map[string]float64, error) {
 	// Get the avg commit time
 	avg := total_time / inputs
 
-	return &map[string]float64{"AVG": avg, "RSS": float64(rss) / math.Pow(2, 20),
+	return &map[string]float64{"AVG": avg, "RSS": float64(rss),
 		"CPU": float64(cpu), "LOG": float64(size)}, nil
 }
 
