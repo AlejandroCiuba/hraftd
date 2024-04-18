@@ -258,8 +258,6 @@ func (s *Store) Stats() (*map[string]float64, error) {
 	// Get the avg commit time
 	avg := total_time / inputs
 
-	fmt.Println(rss, cpu)
-
 	return &map[string]float64{"AVG": avg, "RSS": float64(rss),
 		"CPU": float64(cpu), "LOG": float64(size)}, nil
 }
