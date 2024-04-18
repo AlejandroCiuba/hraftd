@@ -110,12 +110,14 @@ func (s *Service) handleStats(w http.ResponseWriter) {
 		LOG: (*data)["LOG"],
 	}
 
-	pck, err := json.Marshal(results)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-	}
+	// pck, err := json.Marshal(results)
+	// if err != nil {
+	// 	w.WriteHeader(http.StatusBadRequest)
+	// }
 
-	w.Write(pck)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(results)
 }
 
 func (s *Service) handleJoin(w http.ResponseWriter, r *http.Request) {
